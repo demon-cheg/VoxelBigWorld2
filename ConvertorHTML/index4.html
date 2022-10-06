@@ -640,7 +640,7 @@ function start_convert_vox_files(event)
 					
 					glRawJson = JSON.stringify(Model);
 					
-					document.getElementById('unityIframe').contentWindow.myGameInstance.SendMessage('UpdateGameObject', 'UpdateFromWebGL', JSON.stringify(vox_unit_datas));
+					document.getElementById('unityIframe').contentWindow.myGameInstance.SendMessage('UpdateGameObject', 'UpdateFromWebGL', JSON.stringify(rawVoxs));
                     
 					var filename_id = result.vec ? ('v-' + result.axis_order) : ('i-' + result.dim);
                     var filename = file.name + '.' + filename_id + '.json'
