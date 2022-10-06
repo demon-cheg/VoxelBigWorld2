@@ -66,9 +66,9 @@ class UserVoxModelData
 }
 function update_preview(input_base64)
 {
-	glPreview_base64 = input_base64;
+	alert(input_base64);
 	var newObject = JSON.parse(glRawJson);
-	newObject.preview = glPreview_base64;
+	newObject.preview = input_base64;
 	
 	var src = document.getElementById("src");
 	src.value = JSON.stringify(newObject);
