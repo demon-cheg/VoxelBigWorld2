@@ -1,0 +1,945 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"  "http://www.w3.org/TR/html4/strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>JSON ft VOX</title>
+<style>
+body {background-color: gray;}
+h1   {color: blue;background-color: white}
+p    {color: white;}
+.button {
+  background-color: #4CAF50; /* Green */
+  border: none;
+  color: white;
+  padding: 20px 38px;
+  text-align: center;
+  text-decoration: none;
+  display: block;
+  font-size: 20px;
+
+  margin: 10% auto;
+}
+#drop_zone {
+  border: 3px solid blue;
+  background-color: #ba2727;
+  width: 80%;
+  height: 200px;
+}
+
+</style>
+<script type="text/javascript">
+
+const ver = 150;
+var glPreview_base64 = "";
+var glRawJson = "";
+var iFrameWin = null;
+//var unityInstance = UnityLoader.instantiate("unityContainer", "Build/build.json", {onProgress: UnityProgress});
+
+class VoxUnitData
+{
+	constructor(c,x,y,z)
+	{
+		this.color = c;
+		this.x = x;
+		this.y = y;
+		this.z = z;
+	}
+	
+}
+class VoxModelData
+{
+	constructor(body_part,vox_unit_datas)
+	{
+		
+		this.body_part = body_part;
+		this.vox_unit_datas = vox_unit_datas;
+	}
+}
+class UserVoxModelData
+{
+	constructor(address,preview,vox_model_data,server_timestamp)
+	{
+		this.address = address;
+		this.preview_base64 = preview;
+		this.vox_model_data = vox_model_data;
+		this.server_timestamp = server_timestamp;
+	}
+}
+function update_preview(input_base64)
+{
+	glPreview_base64 = input_base64;
+	var newObject = JSON.parse(glRawJson);
+	newObject.preview = glPreview_base64;
+	
+	var src = document.getElementById("src");
+	src.value = JSON.stringify(newObject);
+}
+window.update_preview = update_preview;
+function write_int32le(bin, pos, val)
+{
+    bin[pos + 0] = (val >>  0) & 0xFF;
+    bin[pos + 1] = (val >>  8) & 0xFF;
+    bin[pos + 2] = (val >> 16) & 0xFF;
+    bin[pos + 3] = (val >> 24) & 0xFF;
+    return 4;
+}
+
+function write_int24le(bin, pos, val)
+{
+    bin[pos + 0] = (val >>  0) & 0xFF;
+    bin[pos + 1] = (val >>  8) & 0xFF;
+    bin[pos + 2] = (val >> 16) & 0xFF;
+    return 3;
+}
+
+function put_byte(bin, b)
+{
+    bin.push(b & 0xFF);
+    return 1;
+}
+
+function put_tag(bin, tag)
+{
+    var i;
+    for(i = 0; i < tag.length; i++)
+        put_byte(bin, tag.charCodeAt(i));
+    return tag.length;
+}
+
+function put_int32le(bin, val)
+{
+    var start = bin.length;
+    put_tag(bin, '    ');
+    return write_int32le(bin, start, val);
+}
+
+function put_int24le(bin, val)
+{
+    var start = bin.length;
+    put_tag(bin, '   ');
+    return write_int24le(bin, start, val);
+}
+
+function vox_write_header(ctx)
+{
+    // RIFF style header
+    put_tag(ctx.bin, 'VOX ');
+
+    // version
+    put_int32le(ctx.bin, ver);
+}
+
+function vox_write_chunk(ctx, id, writer_content, writer_children)
+{
+    var start = ctx.bin.length;
+
+    put_tag(ctx.bin, id);
+
+    var self_size_value = 0;
+    var self_size_pos = ctx.bin.length;
+    put_int32le(ctx.bin, 0);
+
+    var children_size_value = 0;
+    var children_size_pos = ctx.bin.length;
+    put_int32le(ctx.bin, 0);
+
+    if(writer_content)
+        self_size_value += writer_content(ctx);
+
+    if(writer_children)
+        children_size_value += writer_children(ctx);
+
+    write_int32le(ctx.bin, children_size_pos, children_size_value);
+    write_int32le(ctx.bin, self_size_pos, self_size_value);
+    return ctx.bin.length - start;
+}
+
+function vox_write_size(ctx)
+{
+    var s = 0;
+
+    // size x
+    s += put_int32le(ctx.bin, 1 + ctx.pos_max.x - ctx.pos_min.x);
+
+    // size y
+    s += put_int32le(ctx.bin, 1 + ctx.pos_max.y - ctx.pos_min.y);
+
+    // size z
+    s += put_int32le(ctx.bin, 1 + ctx.pos_max.z - ctx.pos_min.z);
+
+    return s;
+}
+
+function vox_write_xyzi(ctx)
+{
+    var s = 0;
+
+    // numVoxels (N)
+    s += put_int32le(ctx.bin, ctx.src.length);
+
+    // put data
+    ctx.src.forEach((element, index) => {
+//        console.log('element=', element);
+
+        s += put_byte(ctx.bin, element.x - ctx.pos_min.x);
+        s += put_byte(ctx.bin, element.y - ctx.pos_min.y);
+        s += put_byte(ctx.bin, element.z - ctx.pos_min.z);
+
+        s += put_byte(ctx.bin, element.pal_index + 1);
+    });
+
+    return s;
+}
+
+function vox_write_rgba(ctx)
+{
+    var s = 0;
+
+    ctx.pal.forEach((c, index) => {
+        s += put_byte(ctx.bin, c.r);
+        s += put_byte(ctx.bin, c.g);
+        s += put_byte(ctx.bin, c.b);
+        s += put_byte(ctx.bin, c.a);
+    });
+
+    return s;
+}
+
+function vox_write_main(ctx)
+{
+    var size = 0;
+
+    size += vox_write_chunk(ctx, 'SIZE', vox_write_size, null);
+    size += vox_write_chunk(ctx, 'XYZI', vox_write_xyzi, null);
+    size += vox_write_chunk(ctx, 'RGBA', vox_write_rgba, null);
+
+    return size;
+}
+
+function vox_write(ctx)
+{
+    vox_write_header(ctx);
+    vox_write_chunk(ctx, 'MAIN', null, vox_write_main);
+}
+
+function json2vox(dim, obj)
+{
+    var ctx = {
+        dim: dim,
+        bin: new Array(),
+        src: obj
+    };
+
+    // find bound box
+    ctx.pos_min = {x: ctx.dim, y: ctx.dim, z: ctx.dim};
+    ctx.pos_max = {x: -1, y: -1, z: -1};
+    ctx.src.forEach((element, index) => {
+        // find xyz
+        var axis_order = 'yzx';
+        for(var i_tmp = element.i, j = 0; j < axis_order.length; j++)
+        {
+            element[axis_order[j]] = i_tmp % ctx.dim;
+            i_tmp = Math.floor(i_tmp / ctx.dim);
+        };
+
+        // check min-max
+        if(ctx.pos_min.x > element['x'])
+            ctx.pos_min.x = element['x'];
+        if(ctx.pos_min.y > element['y'])
+            ctx.pos_min.y = element['y'];
+        if(ctx.pos_min.z > element['z'])
+            ctx.pos_min.z = element['z'];
+
+        if(ctx.pos_max.x < element['x'])
+            ctx.pos_max.x = element['x'];
+        if(ctx.pos_max.y < element['y'])
+            ctx.pos_max.y = element['y'];
+        if(ctx.pos_max.z < element['z'])
+            ctx.pos_max.z = element['z'];
+    });
+
+    console.log('ctx.pos_max=', ctx.pos_max, ' ctx.pos_min=', ctx.pos_min);
+
+    // build palette
+    ctx.pal = new Array();
+    ctx.pal.push({r: 0,g: 0,b: 0, a: 0});
+    ctx.src.forEach((element, index) => {
+        var c = {
+            r: parseInt(element.c.substr(0, 2), 16),
+            g: parseInt(element.c.substr(2, 2), 16),
+            b: parseInt(element.c.substr(4, 2), 16),
+            a: 255
+        };
+
+        const exist_color = (e) => (
+            e.r == c.r &&
+            e.g == c.g &&
+            e.b == c.b &&
+            e.a == c.a
+        );
+
+        var idx = ctx.pal.findIndex(exist_color);
+        if(idx < 0)
+        {
+            idx = ctx.pal.length;
+            ctx.pal.push(c);
+        }
+        element.pal_index = idx;
+    });
+    while(ctx.pal.length < 256)
+        ctx.pal.push({r: 0,g: 0,b: 0,a: 0});
+
+    console.log('ctx', ctx);
+
+    vox_write(ctx);
+
+    console.log("bin size is: ", ctx.bin.length);
+    console.log("bin is: ", ctx.bin);
+
+    // copy to byte array
+    var bytes = new Uint8Array(ctx.bin.length);
+    for(i = 0; i < ctx.bin.length; i++)
+        bytes[i] = ctx.bin[i];
+
+    return bytes;
+}
+
+function start_convert_json()
+{
+    var dim_select = document.getElementById("dim");
+    var dim = parseInt(dim_select.options[dim_select.selectedIndex].value);
+    var src = document.getElementById("src");
+    var obj = JSON.parse(src.value);
+    if(!obj)
+        alert("Failed to parse json");
+    else
+    {
+        if(obj instanceof Array)
+        {
+            var bytes = json2vox(dim, obj)
+
+            var blob = new Blob([bytes], {type: 'application/octet-stream'});
+
+            var time = new Date().getTime();
+            downloadFile(blob, 'demo-' + time + '.vox', 'application/octet-stream');
+        }
+        else
+            alert("Not array of object!");
+    }
+}
+
+function get_tag(buf, pos)
+{
+    return String.fromCharCode
+    (
+        buf[pos + 0],
+        buf[pos + 1],
+        buf[pos + 2],
+        buf[pos + 3]
+    );
+}
+
+function get_int32le(buf, pos)
+{
+    var v = 0;
+
+    v += buf[pos + 3]; v <<= 8;
+    v += buf[pos + 2]; v <<= 8;
+    v += buf[pos + 1]; v <<= 8;
+    v += buf[pos + 0];
+
+    return v;
+}
+
+function vox_read_SIZE(buf, pos, ctx, sz)
+{
+    console.log(`vox_read_SIZE: pos=${pos}, sz=${sz}`);
+
+    if(sz != 12)
+        throw('vox_read_SIZE: sz != 12');
+
+    ctx['SIZE'] = {
+        x: get_int32le(buf, pos + 0),
+        y: get_int32le(buf, pos + 4),
+        z: get_int32le(buf, pos + 8),
+    }
+
+    return sz;
+}
+
+function vox_read_XYZI(buf, pos, ctx, sz)
+{
+    var start = pos;
+
+    console.log(`vox_read_XYZI: pos=${pos}, sz=${sz}`);
+
+    if(sz < 4)
+        throw('vox_read_XYZI: sz < 4');
+
+    var n = get_int32le(buf, pos); pos += 4;
+
+    if(sz != 4 * (n + 1))
+        throw('vox_read_XYZI: wrong count');
+
+    ctx['XYZI'] = [];
+
+    for(var i = 0; i < n; i++)
+    {
+        ctx['XYZI'].push({
+            x: buf[pos + 0],
+            y: buf[pos + 1],
+            z: buf[pos + 2],
+            c: buf[pos + 3]
+        });
+
+        pos += 4;
+    }
+
+    return pos - start;
+}
+
+function vox_read_RGBA(buf, pos, ctx, sz)
+{
+    console.log(`vox_read_RGBA: pos=${pos}, sz=${sz}`);
+
+    if(sz != 1024)
+        throw('vox_read_RGBA: sz != 1024');
+
+    ctx['RGBA'] = [];
+
+    for(var i = 0; i < 256; i++, pos += 4)
+        ctx['RGBA'].push({
+            r: buf[pos + 0],
+            g: buf[pos + 1],
+            b: buf[pos + 2],
+            a: buf[pos + 3]
+        });
+
+    return sz;
+}
+
+function vox_read_chunks(buf, pos, ctx, cb)
+{
+    var start = pos;
+
+    if(pos + 12 > buf.byteLength)
+        return 0;
+
+    var tag = get_tag(buf, pos); pos += 4;
+    var sz1 = get_int32le(buf, pos); pos += 4;
+    var sz2 = get_int32le(buf, pos); pos += 4;
+
+    console.log(`vox_read_chunks: tag=[${tag}], sz1=${sz1}, sz2=${sz2}`);
+
+    if((pos + sz1 + sz2) > buf.byteLength)
+        return 0;
+
+    if(cb[tag] !== undefined)
+        cb[tag](buf, pos, ctx, sz1);
+    pos += sz1;
+
+    while(pos < buf.byteLength)
+    {
+        var rb = vox_read_chunks(buf, pos, ctx, cb);
+        pos += rb;
+        if(!rb)
+            break;
+    }
+
+    return pos - start;
+}
+
+function vox_read_header(buf, ctx)
+{
+    if(buf.byteLength < 8)
+        return 0;
+
+    var header = get_tag(buf, 0);
+    console.log(`vox_read_header: header=${header}`);
+    if(header !== 'VOX ')
+        throw('vox_read_header: magic not VOX');
+
+    var version = get_int32le(buf, 4);
+    if(version !== 150)
+        throw('vox_read_header: version bot 150');
+
+    console.log(`vox_read_header: header=${header}, version=${version}`);
+
+    return 8;
+}
+
+function vox_read(buf, ctx)
+{
+    vox_read_header(buf, ctx);
+    return vox_read_chunks(buf, 8, ctx, {
+        SIZE: vox_read_SIZE,
+        XYZI: vox_read_XYZI,
+        RGBA: vox_read_RGBA
+    });
+}
+
+function vox2json(buf, opts)
+{
+    var ctx = {
+        opts : opts
+    };
+
+    try
+    {
+        vox_read(buf, ctx);
+
+        console.log('vox2json:', ctx);
+
+        if(ctx['RGBA'] === undefined)
+            throw(`vox2json: RGBA undefined`);
+
+        if(ctx['XYZI'] === undefined)
+            throw(`vox2json: XYZI undefined`);
+
+        if(ctx['SIZE'] === undefined)
+            throw(`vox2json: SIZE undefined`);
+
+        var dim_power = 8;
+
+        // find bound box
+		ctx.pos_min = {x: 32, y: 32, z: 32};
+		ctx.pos_max = {x: -1, y: -1, z: -1};
+        //ctx.pos_min = {x: 1 << dim_power, y: 1 << dim_power, z: 1 << dim_power};
+        //ctx.pos_max = {x: -1, y: -1, z: -1};
+        ctx['XYZI'].map((element) => {
+            // check min-max
+            if(ctx.pos_min.x > element['x']) ctx.pos_min.x = element['x'];
+            if(ctx.pos_min.y > element['y']) ctx.pos_min.y = element['y'];
+            if(ctx.pos_min.z > element['z']) ctx.pos_min.z = element['z'];
+            if(ctx.pos_max.x < element['x']) ctx.pos_max.x = element['x'];
+            if(ctx.pos_max.y < element['y']) ctx.pos_max.y = element['y'];
+            if(ctx.pos_max.z < element['z']) ctx.pos_max.z = element['z'];
+        });
+        ctx.bb = {
+            x: ctx.pos_max.x - ctx.pos_min.x + 1,
+            y: ctx.pos_max.y - ctx.pos_min.y + 1,
+            z: ctx.pos_max.y - ctx.pos_min.y + 1,
+        }
+        
+		dim_power = 5;
+        console.log('vox2json: ctx.pos_min=', ctx.pos_min, ' ctx.pos_max=', ctx.pos_max, ' ctx.bb=', ctx.bb, 'dim_power=', dim_power);
+
+        const vec_axis_order = 'xyz';
+
+        // build list
+        var result = ctx['XYZI'].map((element) => {
+            const axis_order = 'yzx';
+
+            function format_c(pal)
+            {
+                var v = '';
+                if(pal.r <= 16) v += '0'; v += Number(pal.r).toString(16);
+                if(pal.g <= 16) v += '0'; v += Number(pal.g).toString(16);
+                if(pal.b <= 16) v += '0'; v += Number(pal.b).toString(16);
+                return v;
+            }
+
+            function format_i_idx(e)
+            {
+                var idx = 0;
+                for(var j = 0; j < axis_order.length; j++)
+                    idx += e[axis_order[j]] << (dim_power * j);
+                return idx;
+            }
+
+            function format_i_vec(e)
+            {
+                function format_03d(v)
+                {
+                    if(v < 10) return "00" + v;
+                    if(v < 100) return "0" + v;
+                    return "" + v;
+                }
+                var vec = "";
+                for(var j = 0; j < vec_axis_order.length; j++)
+                    vec += format_03d(e[vec_axis_order[j]]);
+                return vec;
+            }
+
+            return {
+                i : ctx.opts.use_vector ? format_i_vec(element) : format_i_idx(element),
+                c : format_c(ctx['RGBA'][element.c - 1]),
+            }
+        });
+
+        return {
+            json: result,
+            dim: 1 << dim_power,
+            vec: ctx.opts.use_vector,
+            axis_order: vec_axis_order
+        };
+    } catch (e) {
+        throw(e);
+    }
+}
+
+function start_convert_vox_files(event)
+{
+    <!-- event.preventDefault(); -->
+
+    const use_axis_order = "xyz";
+
+    var files = event.dataTransfer.files;
+    for(var i = 0; i < files.length; i++)
+    {
+        const file = files[i];
+        console.log('Selected: ', file);
+
+        const reader = new FileReader();
+
+        reader.onloadend = function(e)
+        {
+            if (e.target.readyState == FileReader.DONE)
+            {
+                try
+                {
+                    var result = vox2json(new Uint8Array(reader.result), {
+                        use_vector: true,
+                        
+                        use_32: true,
+                        use_axis_order: "xyz",
+                    });
+                    console.log('result', result);
+                    var src = document.getElementById("src");
+                    src.value = JSON.stringify(result.json);
+                    var blob = new Blob([src.value], {type: 'application/octet-stream'});
+					
+					
+					var rawVoxs = JSON.parse(src.value);
+					var vox_unit_datas = [];
+					for(var j = 0; j < rawVoxs.length;j++)
+					{
+						
+						var x = parseInt(rawVoxs[j].i.substring(0,3));
+						var y = parseInt(rawVoxs[j].i.substring(3,6));
+						var z = parseInt(rawVoxs[j].i.substring(6,9));
+						var vox = new VoxUnitData(rawVoxs[j].c,x+1,y+1,z+1);
+						
+						vox_unit_datas.push(vox);
+						
+					}
+					const body_part_select = document.getElementById("body_part");
+					const body_part = body_part_select.options[body_part_select.selectedIndex].value;
+					
+					var address = "dima";
+					var preview = glPreview_base64;
+					var vox_model_datas = new VoxModelData(body_part,vox_unit_datas);
+					var server_timestamp = 1;
+					
+					var Model = new UserVoxModelData(address,preview,vox_model_datas,server_timestamp);
+					
+					console.log("must log");
+					
+					var drop_zone = document.getElementById("drop_zone");
+					
+					drop_zone.style.backgroundColor = "#4CAF50";	
+					
+					glRawJson = JSON.stringify(Model);
+					
+					document.getElementById('unityIframe').contentWindow.myGameInstance.SendMessage('UpdateGameObject', 'UpdateFromWebGL', glRawJson);
+                    
+					var filename_id = result.vec ? ('v-' + result.axis_order) : ('i-' + result.dim);
+                    var filename = file.name + '.' + filename_id + '.json'
+                    document.getElementById('json_file_name').textContent = filename;
+                    
+                }
+                catch(e)
+                {
+                    alert(e);
+                }
+            }
+        };
+
+        reader.readAsArrayBuffer(file);
+    }
+
+    document.getElementById('vox_files').value = "";
+}
+function sendModelToBase()
+{
+	const body_part_select = document.getElementById("body_part");
+	const body_part = body_part_select.options[body_part_select.selectedIndex].value;
+	
+	<!-- const url = "https://dev-blocks-ee2af-default-rtdb.firebaseio.com/OnlySpace/VoxelGenerator/Dev/Models/"+body_part+".json"; -->
+	const url = "https://dev-blocks-ee2af-default-rtdb.firebaseio.com/OnlySpace/VoxelGenerator-Demonstration/Dev/Models/"+body_part+".json";
+	const data = document.getElementById("src").value;
+	
+	
+	return (async() =>
+	{
+		try {
+		const response = await fetch(url, {
+		method: 'POST', 
+		headers: {
+			'Content-Type': 'application/json'
+		},
+		body: data
+	});
+	const json = await response.json();
+	alert("Успех:", JSON.stringify(json));
+	document.getElementById("src").value = "Model of " +body_part+ " sended to Database 	: " + JSON.stringify(json);
+	var drop_zone = document.getElementById("drop_zone");
+					
+	drop_zone.style.backgroundColor = "#ba2727";
+	
+	} 	
+	catch (error) {
+		alert('Ошибка:', error);
+	}
+	})();
+	
+	
+}
+function start_convert_json_files(event)
+{
+    event.preventDefault();
+    var dim_select = document.getElementById("dim");
+    var dim = parseInt(dim_select.options[dim_select.selectedIndex].value);
+
+    var files = event.target.files;
+    for(var i = 0; i < files.length; i++)
+    {
+        const file = files[i];
+        console.log('Selected: ', file);
+
+        const reader = new FileReader();
+
+        reader.onloadend = function(e)
+        {
+            if (e.target.readyState == FileReader.DONE)
+            {
+                try
+                {
+                    var obj = JSON.parse(reader.result);
+                    document.getElementById("src").value = reader.result;
+                    if(!obj)
+                        throw("Failed to parse json");
+                    if(!(obj instanceof Array))
+                        throw("Not array of object!");
+
+                    var bytes = json2vox(dim, obj)
+                    var blob = new Blob([bytes], {type: 'application/octet-stream'});
+					
+                    var filename = file.name + '.vox';
+                    document.getElementById('json_file_name').textContent = filename;
+                    
+                }
+                catch(e)
+                {
+                    alert(file.name + ':' + e);
+                }
+            }
+        };
+
+        reader.readAsText(file);
+    }
+
+    document.getElementById('json_files').value = "";
+}
+function encodeImageFileAsURL(element) {
+  var file = element.files[0];
+  var reader = new FileReader();
+  
+  reader.onloadend = function() {
+	var splitted = reader.result.split(',')
+    console.log('RESULT', splitted[1]);
+	glPreview_base64 = splitted[1];
+  }
+  reader.readAsDataURL(file);
+}
+function addPreview(event)
+{
+	event.preventDefault();
+	
+	var files = event.target.files;
+
+    const file = files[i];
+}
+function trig_addPreview()
+{
+	document.getElementById("preview_file").click();
+}
+function trig_convert_vox_files()
+{
+    document.getElementById("vox_files").click();
+}
+
+function trig_convert_json_files()
+{
+    document.getElementById("json_files").click();
+}
+
+function download_json_from_url()
+{
+    var url_elem = document.getElementById("url");
+    var url = url_elem.value;
+    var xmlHttp = new XMLHttpRequest();
+
+    url_elem.setAttribute("disabled","disabled");
+
+    xmlHttp.open( "GET", url, false ); // false for synchronous request
+    xmlHttp.send( null );
+
+    var src = document.getElementById("src");
+    src.value = xmlHttp.responseText;
+
+    url_elem.removeAttribute("disabled");
+}
+
+// https://gist.github.com/dreamyguy/6b4ab77d2f118adb8a63c4a03fba349d
+function downloadFile(blob, filename, mime) {
+  if (typeof window.navigator.msSaveBlob !== 'undefined') {
+    // IE doesn't allow using a blob object directly as link href.
+    // Workaround for "HTML7007: One or more blob URLs were
+    // revoked by closing the blob for which they were created.
+    // These URLs will no longer resolve as the data backing
+    // the URL has been freed."
+    window.navigator.msSaveBlob(blob, filename);
+    return;
+  }
+  // Other browsers
+  // Create a link pointing to the ObjectURL containing the blob
+  const blobURL = window.URL.createObjectURL(blob);
+  const tempLink = document.createElement('a');
+  tempLink.style.display = 'none';
+  tempLink.href = blobURL;
+  tempLink.setAttribute('download', filename);
+  // Safari thinks _blank anchor are pop ups. We only want to set _blank
+  // target if the browser does not support the HTML5 download attribute.
+  // This allows you to download files in desktop safari if pop up blocking
+  // is enabled.
+  if (typeof tempLink.download === 'undefined') {
+    tempLink.setAttribute('target', '_blank');
+  }
+  document.body.appendChild(tempLink);
+  tempLink.click();
+  document.body.removeChild(tempLink);
+  setTimeout(() => {
+    // For Firefox it is necessary to delay revoking the ObjectURL
+    window.URL.revokeObjectURL(blobURL);
+  }, 100);
+}
+function dragOverHandler(ev) {
+      console.log('File(s) in drop zone');
+
+      // Prevent default behavior (Prevent file from being opened)
+      ev.preventDefault();
+}
+
+function dropHandler(ev) {
+      console.log('File(s) dropped');
+
+      // Prevent default behavior (Prevent file from being opened)
+      ev.preventDefault();
+
+      if (ev.dataTransfer.items) {
+        // Use DataTransferItemList interface to access the file(s)
+        for (var i = 0; i < ev.dataTransfer.items.length; i++) {
+          // If dropped items aren't files, reject them
+          if (ev.dataTransfer.items[i].kind === 'file') {
+            var file = ev.dataTransfer.items[i].getAsFile();
+            console.log('... file[' + i + '].name = ' + file.name);
+          }
+        }
+      } else {
+        // Use DataTransfer interface to access the file(s)
+        for (var i = 0; i < ev.dataTransfer.files.length; i++) {
+          console.log('... file[' + i + '].name = ' + ev.dataTransfer.files[i].name);
+        }
+      }
+	  
+		start_convert_vox_files(ev);
+		
+		
+      // Pass event to removeDragData for cleanup
+      removeDragData(ev)
+}
+
+function removeDragData(ev) {
+      console.log('Removing drag data')
+
+      if (ev.dataTransfer.items) {
+        // Use DataTransferItemList interface to remove the drag data
+        ev.dataTransfer.items.clear();
+      } else {
+        // Use DataTransfer interface to remove the drag data
+        ev.dataTransfer.clearData();
+      }
+}
+</script>
+</head>
+<body>
+<h1 style="text-align: center">VOX ft JSON</h1>
+<table width="100%" border="0" cellpadding="10px" cellspacing="10px">
+<tr valign="top">
+    <td width="50%">
+        <h2>VOX to JSON</h2>
+		<p>
+             Body part type: <select id="body_part">
+                <option value="Head">Head</option>
+                <option value="Arms">Arms</option>
+                <option value="Body">Body</option>
+                <option value="Legs">Legs</option>
+                
+            </select>
+        </p>
+        
+
+        
+        <hr>
+		
+		
+		<div id="drop_zone" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
+		<p style="text-align: center">Drag one or more files to this Drop Zone ...</p>
+		</div>
+		<hr>
+		<iframe mozallowfullscreen="true" id="unityIframe" allow="autoplay; fullscreen"
+		src="https://demon-cheg.github.io/VoxelBigWorld2/Convertor/index.html" 
+		style="border:0px #000000 none;" name="Pong: Star Wars Remix" 
+		scrolling="no" msallowfullscreen="true" allowfullscreen="true" 
+		webkitallowfullscreen="true" allowtransparency="true" frameborder="0" 
+		marginheight="px" marginwidth="320px" height="350px" width="350px"></iframe>
+		
+        <!-- <h2>JSON to VOX</h2>
+        <p>Box dimentions:
+            <select id="dim">
+                <option value="256">256 x 256 x 256</option>
+                <option value="32">32 x 32 x 32</option>
+                <option value="16">16 x 16 x 16</option>
+            </select>
+        </p>
+        <p>
+            <button onClick="trig_convert_json_files()">Convert JSON to VOX from files</button>
+            <button onClick="start_convert_json()" style="margin-left: 40px;">Convert JSON to VOX from text</button>
+        </p>
+        <hr>
+        <h2>Download JSON text from URL</h2>
+        <p> URL: <input type="text" size="40" id="url" value="https://dev-blocks-ee2af-default-rtdb.firebaseio.com/16x16x16/1653149789_Natali_001.json?pretty=true"></p>
+        <button onClick="download_json_from_url();">Download</button> -->
+    </td>
+    <td width="50%"><h2>JSON text <u><span id="json_file_name"></span></u></h2><textarea id="src" rows="30" style="width: 100%;"></textarea></td>
+</tr>
+</table>
+<input type="file" id="vox_files" name="files[]" multiple style="display: none;"/>
+<input type="file" id="json_files" name="files[]" multiple style="display: none;"/>
+<input type="file" id="preview_file" name="files[]" multiple style="display: none;"/>
+
+<button class="button" onClick="sendModelToBase()">Send JSON to database!</button>
+
+
+
+</body>
+
+<script type="text/javascript">
+    document.getElementById('vox_files').addEventListener('change', start_convert_vox_files, false);
+    document.getElementById('json_files').addEventListener('change', start_convert_json_files, false);
+    document.getElementById('preview_file').addEventListener('change', addPreview, false);
+</script>
+
+</html>
+
+
