@@ -46,7 +46,15 @@ var glRawJson = "";
 var glReadyJson = "";
 var iFrameWin = null;
 //var unityInstance = UnityLoader.instantiate("unityContainer", "Build/build.json", {onProgress: UnityProgress});
-
+class RawVoxels
+{
+	constructor(i ,c)
+	{
+		this.i = i;
+		
+		this.c = c;
+	}
+}
 class VoxUnitData
 {
 	constructor(c,x,y,z)
@@ -103,18 +111,35 @@ function invert_x()
 	{
 		max_length = 8;
 	}
-	console.log(invertedObject.vox_model_data.body_part);
-	console.log(invertedObject.vox_model_data.body_part);
-	console.log(invertedObject.vox_model_data.body_part);
+	
+	var rawVoxs = [];
+	
 	for(var i = 0; i < invertedObject.vox_model_data.vox_unit_datas.length; i++)
     {
-		console.log("was :" );
-		console.log(invertedObject.vox_model_data.vox_unit_datas[i].x);
-		console.log("set :" );
 		
 		invertedObject.vox_model_data.vox_unit_datas[i].x = max_length - invertedObject.vox_model_data.vox_unit_datas[i].x;
-		console.log(invertedObject.vox_model_data.vox_unit_datas[i].x);
+		var str_x = "" + (invertedObject.vox_model_data.vox_unit_datas[i].x - 1);
+		var pad_x = "000";
+		var ans_x = pad_x.substring(0, pad_x.length - str_x.length) + str_x;
+		
+		var str_y = "" + (invertedObject.vox_model_data.vox_unit_datas[i].y - 1);
+		var pad_y = "000";
+		var ans_y = pad_y.substring(0, pad_y.length - str_y.length) + str_y;
+		
+		var str_z = "" + (invertedObject.vox_model_data.vox_unit_datas[i].z - 1);
+		var pad_z = "000";
+		var ans_z = pad_z.substring(0, pad_z.length - str_z.length) + str_z;
+		
+		var _i = ans_x + ans_y + ans_z;
+		console.log(_i);
+		
+		var _c = invertedObject.vox_model_data.vox_unit_datas[i].color;
+		console.log(_c);
+		var item = new RawVoxels(_i ,_c);
+		console.log(item);
+		rawVoxs.push(item);
 	}
+	
 	glRawJson = JSON.stringify(invertedObject);
 	document.getElementById('unityIframe').contentWindow.myGameInstance.SendMessage('UpdateGameObject', 'UpdateFromWebGL', JSON.stringify(rawVoxs));
 }
