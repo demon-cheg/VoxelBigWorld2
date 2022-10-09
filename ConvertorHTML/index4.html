@@ -18,6 +18,18 @@ p    {color: white;}
 
   margin: 10% auto;
 }
+.smallButton {
+  background-color: #4CAF50; /* Green */
+  border: none;
+  color: white;
+  padding: 20px 20px;
+  text-align: center;
+  text-decoration: none;
+  display: block;
+  font-size: 15px;
+
+  margin: auto;
+}
 #drop_zone {
   border: 3px solid blue;
   background-color: #ba2727;
@@ -31,6 +43,7 @@ p    {color: white;}
 const ver = 150;
 var glPreview_base64 = "";
 var glRawJson = "";
+var glReadyJson = "";
 var iFrameWin = null;
 //var unityInstance = UnityLoader.instantiate("unityContainer", "Build/build.json", {onProgress: UnityProgress});
 
@@ -72,7 +85,40 @@ function update_preview(input_base64)
 	
 	var src = document.getElementById("src");
 	src.value = JSON.stringify(newObject);
+	glReadyJson = JSON.stringify(newObject);
 }
+function invert_x()
+{
+	var max_length = 16;
+	var invertedObject = JSON.parse(glRawJson);
+	
+	const _body_part_select = document.getElementById("body_part");
+	const _body_part = _body_part_select.options[_body_part_select.selectedIndex].value;
+	
+	if(_body_part === "LEGS")
+	{
+		max_length = 8;
+	}
+	if(_body_part === "ARMS")
+	{
+		max_length = 8;
+	}
+	console.log(invertedObject.vox_model_data.body_part);
+	console.log(invertedObject.vox_model_data.body_part);
+	console.log(invertedObject.vox_model_data.body_part);
+	for(var i = 0; i < invertedObject.vox_model_data.vox_unit_datas.length; i++)
+    {
+		console.log("was :" );
+		console.log(invertedObject.vox_model_data.vox_unit_datas[i].x);
+		console.log("set :" );
+		
+		invertedObject.vox_model_data.vox_unit_datas[i].x = max_length - invertedObject.vox_model_data.vox_unit_datas[i].x;
+		console.log(invertedObject.vox_model_data.vox_unit_datas[i].x);
+	}
+	glRawJson = JSON.stringify(invertedObject);
+	document.getElementById('unityIframe').contentWindow.myGameInstance.SendMessage('UpdateGameObject', 'UpdateFromWebGL', JSON.stringify(rawVoxs));
+}
+
 
 function write_int32le(bin, pos, val)
 {
@@ -903,6 +949,7 @@ function removeDragData(ev) {
 		scrolling="no" msallowfullscreen="true" allowfullscreen="true" 
 		webkitallowfullscreen="true" allowtransparency="true" frameborder="0" 
 		marginheight="px" marginwidth="320px" height="350px" width="350px"></iframe>
+		<button onClick="invert_x()">invert on x Axis</button>
 		
         <!-- <h2>JSON to VOX</h2>
         <p>Box dimentions:
