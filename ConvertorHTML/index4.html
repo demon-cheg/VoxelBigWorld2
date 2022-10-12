@@ -141,7 +141,10 @@ function invert_x()
 	}
 	
 	glRawJson = JSON.stringify(invertedObject);
-	document.getElementById('unityIframe').contentWindow.myGameInstance.SendMessage('UpdateGameObject', 'UpdateFromWebGL', JSON.stringify(rawVoxs));
+	
+	var newString = _body_part + JSON.stringify(rawVoxs);
+	
+	document.getElementById('unityIframe').contentWindow.myGameInstance.SendMessage('UpdateGameObject', 'UpdateFromWebGL', newString);
 }
 function invert_y()
 {
@@ -758,7 +761,9 @@ function start_convert_vox_files(event)
 					
 					glRawJson = JSON.stringify(Model);
 					
-					document.getElementById('unityIframe').contentWindow.myGameInstance.SendMessage('UpdateGameObject', 'UpdateFromWebGL', JSON.stringify(rawVoxs));
+					var newString = body_part + JSON.stringify(rawVoxs);
+					
+					document.getElementById('unityIframe').contentWindow.myGameInstance.SendMessage('UpdateGameObject', 'UpdateFromWebGL',newString );
                     
 					var filename_id = result.vec ? ('v-' + result.axis_order) : ('i-' + result.dim);
                     var filename = file.name + '.' + filename_id + '.json'
