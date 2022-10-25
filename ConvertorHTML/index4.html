@@ -77,9 +77,11 @@ class VoxModelData
 }
 class UserVoxModelData
 {
-	constructor(address,preview,vox_model_data,server_timestamp)
+	constructor(address,preview,vox_model_data,server_timestamp , contact_info , owner_name)
 	{
 		this.address = address;
+		this.contact_info = contact_info;
+		this.owner_name = owner_name;
 		this.preview_base64 = preview;
 		this.vox_model_data = vox_model_data;
 		this.server_timestamp = server_timestamp;
@@ -750,11 +752,13 @@ function start_convert_vox_files(event)
 					const body_part = body_part_select.options[body_part_select.selectedIndex].value;
 					
 					var address = "dima";
+					var contact_info = "dmitriy";
+					var owner_name = "dmitro";
 					var preview = glPreview_base64;
 					var vox_model_datas = new VoxModelData(body_part,vox_unit_datas);
 					var server_timestamp = 1;
 					
-					var Model = new UserVoxModelData(address,preview,vox_model_datas,server_timestamp);
+					var Model = new UserVoxModelData(address,preview,vox_model_datas,server_timestamp,contact_info,owner_name);
 					
 					console.log("must log");
 					
