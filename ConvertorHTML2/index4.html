@@ -815,7 +815,7 @@ function sendModelToBase()
 	});
 	const json = await response.json();
 	alert("Успех:", JSON.stringify(json));
-	document.getElementById("src").value = "Model of " +body_part+ " sended to Database 	: " + JSON.stringify(json);
+	document.getElementById("src").value = "Model of " +body_part.substring(0,4) + " sended to Database 	: " + JSON.stringify(json);
 	var drop_zone = document.getElementById("drop_zone");
 					
 	drop_zone.style.backgroundColor = "#ba2727";
