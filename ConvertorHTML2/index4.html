@@ -799,7 +799,9 @@ function sendModelToBase()
 	const body_part = body_part_select.options[body_part_select.selectedIndex].value;
 	
 	//сonst url = "https://dev-blocks-ee2af-default-rtdb.firebaseio.com/OnlySpace/VoxelGenerator/Dev/Models/"+body_part+".json";
-	const url = "https://dev-better-space-api.herokuapp.com/api/models/"+body_part;
+	//const url = "https://dev-better-space-api.herokuapp.com/api/models/"+body_part;
+	
+	const url = "https://space-admin-front.herokuapp.com/api/models/"+body_part;
 	const data = document.getElementById("src").value;
 	
 	
