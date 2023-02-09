@@ -799,7 +799,7 @@ function sendModelToBase()
 	const body_part = body_part_select.options[body_part_select.selectedIndex].value;
 	
 	//сonst url = "https://dev-blocks-ee2af-default-rtdb.firebaseio.com/OnlySpace/VoxelGenerator/Dev/Models/"+body_part+".json";
-	const url = "https://dev-better-space-api.herokuapp.com/api/model/"+"16X";
+	const url = "https://dev-better-space-api.herokuapp.com/api/model/"+"16x";
 	const data = document.getElementById("src").value;
 	
 	
@@ -815,7 +815,7 @@ function sendModelToBase()
 	});
 	const json = await response.json();
 	alert("Успех:", JSON.stringify(json));
-	document.getElementById("src").value = "Model of " +body_part + " sended to Database 	: " + JSON.stringify(json);
+	document.getElementById("src").value = "Model of " +"16x" + " sended to Database 	: " + JSON.stringify(json);
 	var drop_zone = document.getElementById("drop_zone");
 					
 	drop_zone.style.backgroundColor = "#ba2727";
