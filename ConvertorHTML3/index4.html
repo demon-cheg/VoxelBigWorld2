@@ -772,7 +772,7 @@ function start_convert_vox_files(event)
 					
 					glRawJson = JSON.stringify(Model);
 					
-					var newString = body_part.substring(0,4) +" "+ JSON.stringify(rawVoxs);
+					var newString = "S_MIC" +" "+ JSON.stringify(rawVoxs);
 					
 					document.getElementById('unityIframe').contentWindow.myGameInstance.SendMessage('UpdateGameObject', 'UpdateFromWebGL',newString );
                     
